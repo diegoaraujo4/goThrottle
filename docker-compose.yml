@@ -1,0 +1,17 @@
+version: '3'
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redis
+    environment:
+      - REDIS_ADDRESS=redis:6379
+      - IP_LIMIT=5
+      - TOKEN_LIMIT=10
+      - BLOCK_DURATION=300
+  redis:
+    image: "redis:alpine"
+    ports:
+      - "6379:6379"
