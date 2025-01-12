@@ -28,7 +28,10 @@ func main() {
 	}
 
 	// Load configuration
-	cfg := config.LoadConfig()
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("Error loading configuration: %v", err)
+	}
 	log.Default().Printf("Configuration loaded: %+v\n", cfg)
 
 	//Initialize Redis client
