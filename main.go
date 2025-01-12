@@ -9,7 +9,10 @@ import (
 	"net/http"
 
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 )
+
+var redisClient *redis.Client
 
 func responder(w http.ResponseWriter, _ *http.Request) {
 	log.Print("Executing Response Handler")
@@ -24,7 +27,7 @@ func main() {
 	// Loading environment variables
 	err := godotenv.Load()
 	if err != nil {
-		log.Fatal("Error loading .env file")
+		log.Default().Printf("Error loading .env file using default environment variables: %v\n", err)
 	}
 
 	// Load configuration
@@ -35,8 +38,11 @@ func main() {
 	log.Default().Printf("Configuration loaded: %+v\n", cfg)
 
 	//Initialize Redis client
-	redisClient := limiter.NewRedisClient(cfg.RedisAddress)
+	if redisClient == nil {
+		redisClient = limiter.NewRedisClient(cfg.RedisAddress)
+	}
 	log.Default().Printf("Redis client initialized...")
+
 	// Create a new limiter
 	rateLimiter, err := limiter.NewLimiter(redisClient, cfg)
 	if err != nil {
