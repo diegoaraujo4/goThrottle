@@ -11,7 +11,7 @@ import (
 	"github.com/joho/godotenv"
 )
 
-func reponser(w http.ResponseWriter, _ *http.Request) {
+func responder(w http.ResponseWriter, _ *http.Request) {
 	log.Print("Executing Response Handler")
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write([]byte("OK")); err != nil {
@@ -43,9 +43,7 @@ func main() {
 
 	// Set up the HTTP server
 	mux := http.NewServeMux()
-	responseHandler := http.HandlerFunc(reponser)
-
-	mux.Handle("/", middleware.RateLimiter(ctx, rateLimiter, responseHandler))
+	mux.Handle("/", middleware.RateLimiter(ctx, rateLimiter, http.HandlerFunc(responder)))
 
 	// Start the server
 	port := "8080"
