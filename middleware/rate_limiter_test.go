@@ -2,6 +2,8 @@ package middleware
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -26,6 +28,8 @@ func TestRateLimiter(t *testing.T) {
 		expectedStatus int
 		tokenValidaton bool
 		skipRedis      bool
+		expectAnError  bool
+		exceedLimit    bool
 	}{
 		{
 			name:           "Valid API token limit",
@@ -44,6 +48,7 @@ func TestRateLimiter(t *testing.T) {
 			remoteAddr:     "192.168.1.1:1234",
 			tokenValidaton: true,
 			expectedStatus: http.StatusTooManyRequests,
+			exceedLimit:    true,
 		},
 		{
 			name:           "Valid IP address limit",
@@ -60,6 +65,7 @@ func TestRateLimiter(t *testing.T) {
 			remoteAddr:     "192.168.1.1:1234",
 			tokenValidaton: false,
 			expectedStatus: http.StatusTooManyRequests,
+			exceedLimit:    true,
 		},
 		{
 			name:           "Invalid remote address",
@@ -67,6 +73,25 @@ func TestRateLimiter(t *testing.T) {
 			tokenValidaton: false,
 			expectedStatus: http.StatusBadRequest,
 			skipRedis:      true,
+		},
+		{
+			name:           "Server Error API token limit",
+			tokenLimit:     5,
+			redisKey:       "token:valid-api-key",
+			apiKey:         "valid-api-key",
+			remoteAddr:     "192.168.1.1:1234",
+			tokenValidaton: true,
+			expectedStatus: http.StatusInternalServerError,
+			expectAnError:  true,
+		},
+		{
+			name:           "Server Error IP address limit",
+			iplimit:        5,
+			redisKey:       "ip:192.168.1.1",
+			remoteAddr:     "192.168.1.1:1234",
+			tokenValidaton: false,
+			expectedStatus: http.StatusInternalServerError,
+			expectAnError:  true,
 		},
 	}
 
@@ -82,11 +107,17 @@ func TestRateLimiter(t *testing.T) {
 			handler := RateLimiter(context.Background(), rateLimiter, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			}))
-			duration := time.Duration(1) * time.Second
 
 			if !tt.skipRedis {
-				mockRedis.ExpectIncr(tt.redisKey).SetVal(int64(1))
-				mockRedis.ExpectExpire(tt.redisKey, duration).SetVal(true)
+				if tt.expectAnError {
+					mockRedis.ExpectGet(fmt.Sprintf("%s:block", tt.redisKey)).SetErr(errors.New("error"))
+				} else if tt.exceedLimit {
+					mockRedis.ExpectGet(fmt.Sprintf("%s:block", tt.redisKey)).SetVal("blocker")
+				} else {
+					mockRedis.ExpectGet(fmt.Sprintf("%s:block", tt.redisKey)).RedisNil()
+					mockRedis.ExpectIncr(tt.redisKey).SetVal(int64(1))
+					mockRedis.ExpectExpire(tt.redisKey, time.Second).SetVal(true)
+				}
 			}
 
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
