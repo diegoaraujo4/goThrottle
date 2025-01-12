@@ -3,6 +3,7 @@ package limiter
 import (
 	"context"
 	"errors"
+	"fmt"
 	"goThrottle/config"
 	"testing"
 	"time"
@@ -25,9 +26,9 @@ func TestNewLimiter_Error(t *testing.T) {
 func TestLimiter_CheckLimit(t *testing.T) {
 	client, mock := redismock.NewClientMock()
 	testConfig := config.Config{
-		IPLimit:       5,
-		TokenLimit:    10,
-		BlockDuration: 1,
+		IPLimit:       2,
+		TokenLimit:    2,
+		BlockDuration: 2,
 	}
 	limiter, err := NewLimiter(client, testConfig)
 	assert.NoError(t, err)
@@ -37,10 +38,13 @@ func TestLimiter_CheckLimit(t *testing.T) {
 	t.Run("within IP limit", func(t *testing.T) {
 		ctx := context.Background()
 		key := "test_key_within_limit"
+		blockedKey := fmt.Sprintf("%s:block", key)
+
 		for i := 0; i < limiter.config.IPLimit; i++ {
+			mock.ExpectGet(blockedKey).RedisNil()
 			mock.ExpectIncr(key).SetVal(int64(i + 1))
 			if i == 0 {
-				mock.ExpectExpire(key, duration).SetVal(true)
+				mock.ExpectExpire(key, time.Second).SetVal(true)
 			}
 
 			allowed, err := limiter.CheckLimit(ctx, key, IPLimit)
@@ -52,10 +56,12 @@ func TestLimiter_CheckLimit(t *testing.T) {
 	t.Run("within Token limit", func(t *testing.T) {
 		ctx := context.Background()
 		key := "test_key_within_limit"
+		blockedKey := fmt.Sprintf("%s:block", key)
 		for i := 0; i < limiter.config.TokenLimit; i++ {
+			mock.ExpectGet(blockedKey).RedisNil()
 			mock.ExpectIncr(key).SetVal(int64(i + 1))
 			if i == 0 {
-				mock.ExpectExpire(key, duration).SetVal(true)
+				mock.ExpectExpire(key, time.Second).SetVal(true)
 			}
 
 			allowed, err := limiter.CheckLimit(ctx, key, TokenLimit)
@@ -75,22 +81,35 @@ func TestLimiter_CheckLimit(t *testing.T) {
 	t.Run("exceed limit", func(t *testing.T) {
 		ctx := context.Background()
 		key := "test_key_exceed_limit"
+		blockedKey := fmt.Sprintf("%s:block", key)
 		for i := 0; i <= limiter.config.IPLimit; i++ {
-			mock.ExpectIncr(key).SetVal(int64(i + 1))
-			if i == 0 {
-				mock.ExpectExpire(key, duration).SetVal(true)
+			mock.ClearExpect()
+			if i < limiter.config.IPLimit {
+				mock.ExpectGet(blockedKey).RedisNil()
+				mock.ExpectIncr(key).SetVal(int64(i + 1))
+				if i == 0 {
+					mock.ExpectExpire(key, time.Second).SetVal(true)
+				}
 			}
 
-			allowed, err := limiter.CheckLimit(ctx, key, IPLimit)
+			if i == limiter.config.IPLimit-1 {
+				mock.ExpectSet(blockedKey, "blocked", duration).SetVal("blocked")
+			}
+
+			if i >= limiter.config.IPLimit {
+				mock.ExpectGet(blockedKey).SetVal("blocked")
+			}
+
+			isAllowed, err := limiter.CheckLimit(ctx, key, IPLimit)
 
 			if i < limiter.config.IPLimit {
 				assert.NoError(t, err)
-				assert.True(t, allowed)
+				assert.True(t, isAllowed)
 			}
 
-			if i == limiter.config.IPLimit {
+			if i >= limiter.config.IPLimit {
 				assert.NoError(t, err)
-				assert.False(t, allowed)
+				assert.False(t, isAllowed)
 			}
 		}
 	})
@@ -98,22 +117,34 @@ func TestLimiter_CheckLimit(t *testing.T) {
 	t.Run("block duration", func(t *testing.T) {
 		ctx := context.Background()
 		key := "test_key_block_duration"
+		blockedKey := fmt.Sprintf("%s:block", key)
 		requestCount := 0
-		for requestCount < limiter.config.IPLimit {
+		for requestCount <= limiter.config.IPLimit {
+			mock.ExpectGet(blockedKey).RedisNil()
 			mock.ExpectIncr(key).SetVal(int64(requestCount + 1))
 			if requestCount == 0 {
-				mock.ExpectExpire(key, duration).SetVal(true)
+				mock.ExpectExpire(key, time.Second).SetVal(true)
+			}
+
+			if requestCount == limiter.config.IPLimit {
+				mock.ExpectSet(blockedKey, "blocked", duration).SetVal("blocked")
 			}
 
 			allowed, err := limiter.CheckLimit(ctx, key, IPLimit)
-			assert.NoError(t, err)
-			assert.True(t, allowed)
+
+			if requestCount < limiter.config.IPLimit {
+				assert.NoError(t, err)
+				assert.True(t, allowed)
+			} else {
+				assert.NoError(t, err)
+				assert.False(t, allowed)
+			}
 
 			requestCount++
 		}
 
 		// Invalid blocked request
-		mock.ExpectIncr(key).SetVal(int64(requestCount + 1))
+		mock.ExpectGet(blockedKey).SetVal("blocked")
 		allowed, err := limiter.CheckLimit(ctx, key, IPLimit)
 		assert.NoError(t, err)
 		assert.False(t, allowed)
@@ -121,8 +152,9 @@ func TestLimiter_CheckLimit(t *testing.T) {
 		// Wait for block duration
 		time.Sleep(duration)
 
+		mock.ExpectGet(blockedKey).RedisNil()
 		mock.ExpectIncr(key).SetVal(int64(1))
-		mock.ExpectExpire(key, duration).SetVal(true)
+		mock.ExpectExpire(key, time.Second).SetVal(true)
 		allowed, err = limiter.CheckLimit(ctx, key, IPLimit)
 		assert.NoError(t, err)
 		assert.True(t, allowed)
@@ -137,10 +169,24 @@ func TestLimiter_CheckLimit(t *testing.T) {
 		assert.ErrorContains(t, err, "unknown limit type: someLimit")
 	})
 
+	t.Run("Error on Getting Key", func(t *testing.T) {
+		ctx := context.Background()
+		key := "test_key_within_limit_error"
+		blockedKey := fmt.Sprintf("%s:block", key)
+
+		mock.ExpectGet(blockedKey).SetErr(errors.New("error getting key"))
+		allowed, err := limiter.CheckLimit(ctx, key, IPLimit)
+		assert.False(t, allowed)
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "error getting key")
+	})
+
 	t.Run("Error on Increasing limit", func(t *testing.T) {
 		ctx := context.Background()
 		key := "test_key_within_limit_error"
+		blockedKey := fmt.Sprintf("%s:block", key)
 
+		mock.ExpectGet(blockedKey).RedisNil()
 		mock.ExpectIncr(key).SetErr(errors.New("error increasing limit"))
 		allowed, err := limiter.CheckLimit(ctx, key, IPLimit)
 		assert.False(t, allowed)
@@ -151,9 +197,11 @@ func TestLimiter_CheckLimit(t *testing.T) {
 	t.Run("Error on adding token expiration", func(t *testing.T) {
 		ctx := context.Background()
 		key := "test_key_within_expiration_error"
+		blockedKey := fmt.Sprintf("%s:block", key)
 
+		mock.ExpectGet(blockedKey).RedisNil()
 		mock.ExpectIncr(key).SetVal(int64(1))
-		mock.ExpectExpire(key, duration).SetErr(errors.New("error setting expiration"))
+		mock.ExpectExpire(key, time.Second).SetErr(errors.New("error setting expiration"))
 		allowed, err := limiter.CheckLimit(ctx, key, IPLimit)
 		assert.False(t, allowed)
 		assert.Error(t, err)

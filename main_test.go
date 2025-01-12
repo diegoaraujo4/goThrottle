@@ -40,8 +40,9 @@ func TestMainFunction(t *testing.T) {
 	}()
 	time.Sleep(1 * time.Second) // Give the server a second to start
 
+	mock.ExpectGet("ip:::1:block").RedisNil()
 	mock.ExpectIncr("ip:::1").SetVal(int64(1))
-	mock.ExpectExpire("ip:::1", time.Duration(300*time.Second)).SetVal(true)
+	mock.ExpectExpire("ip:::1", time.Second).SetVal(true)
 
 	// Test if the server is running and responding
 	resp, err := http.Get("http://localhost:8080")

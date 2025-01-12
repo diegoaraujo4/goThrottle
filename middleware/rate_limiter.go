@@ -22,7 +22,11 @@ func RateLimiter(
 			log.Default().Printf("Limiting based on API key")
 			// Limit based on API key (token)
 			allowed, err := limiter.CheckLimit(ctx, fmt.Sprintf("token:%s", apiKey), TokenLimit)
-			if err != nil || !allowed {
+			if err != nil {
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+			if !allowed {
 				http.Error(w, rateLimitExceededMsg, http.StatusTooManyRequests)
 				return
 			}
@@ -34,7 +38,11 @@ func RateLimiter(
 				return
 			}
 			allowed, err := limiter.CheckLimit(ctx, fmt.Sprintf("ip:%s", ip), IPLimit)
-			if err != nil || !allowed {
+			if err != nil {
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+			if !allowed {
 				http.Error(w, rateLimitExceededMsg, http.StatusTooManyRequests)
 				return
 			}
