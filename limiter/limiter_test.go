@@ -33,7 +33,7 @@ func TestLimiter_CheckLimit(t *testing.T) {
 	limiter, err := NewLimiter(client, testConfig)
 	assert.NoError(t, err)
 
-	duration := time.Duration(limiter.config.BlockDuration) * time.Second
+	blockDuration := time.Duration(limiter.config.BlockDuration) * time.Second
 
 	t.Run("within IP limit", func(t *testing.T) {
 		ctx := context.Background()
@@ -93,7 +93,7 @@ func TestLimiter_CheckLimit(t *testing.T) {
 			}
 
 			if i == limiter.config.IPLimit-1 {
-				mock.ExpectSet(blockedKey, "blocked", duration).SetVal("blocked")
+				mock.ExpectSet(blockedKey, "blocked", blockDuration).SetVal("blocked")
 			}
 
 			if i >= limiter.config.IPLimit {
@@ -127,7 +127,7 @@ func TestLimiter_CheckLimit(t *testing.T) {
 			}
 
 			if requestCount == limiter.config.IPLimit {
-				mock.ExpectSet(blockedKey, "blocked", duration).SetVal("blocked")
+				mock.ExpectSet(blockedKey, "blocked", blockDuration).SetVal("blocked")
 			}
 
 			allowed, err := limiter.CheckLimit(ctx, key, IPLimit)
@@ -150,7 +150,7 @@ func TestLimiter_CheckLimit(t *testing.T) {
 		assert.False(t, allowed)
 
 		// Wait for block duration
-		time.Sleep(duration)
+		time.Sleep(blockDuration)
 
 		mock.ExpectGet(blockedKey).RedisNil()
 		mock.ExpectIncr(key).SetVal(int64(1))
