@@ -1,4 +1,5 @@
 # goThrottle
+[![codecov](https://codecov.io/gh/diegoaraujo4/goThrottle/graph/badge.svg?token=KMC9HDY5YL)](https://codecov.io/gh/diegoaraujo4/goThrottle)
 ## Golang Study for Rate Limiter
 Este é um rate limiter implementado em Go para controlar o tráfego de requisições baseado em IP ou token de acesso, usando Redis como backend de persistência.
 

@@ -2,6 +2,7 @@ package limiter
 
 import (
 	"context"
+	"errors"
 	"goThrottle/config"
 	"testing"
 	"time"
@@ -9,6 +10,17 @@ import (
 	"github.com/go-redis/redismock/v9"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestNewLimiter_Error(t *testing.T) {
+	client, _ := redismock.NewClientMock()
+	testConfig := config.Config{
+		IPLimit:       -1,
+		TokenLimit:    -1,
+		BlockDuration: -1,
+	}
+	_, err := NewLimiter(client, testConfig)
+	assert.ErrorContains(t, err, "invalid configuration values")
+}
 
 func TestLimiter_CheckLimit(t *testing.T) {
 	client, mock := redismock.NewClientMock()
@@ -50,6 +62,14 @@ func TestLimiter_CheckLimit(t *testing.T) {
 			assert.NoError(t, err)
 			assert.True(t, allowed)
 		}
+	})
+
+	t.Run("within invalid limit", func(t *testing.T) {
+		ctx := context.Background()
+		key := "test_key_within_limit"
+		allowed, err := limiter.CheckLimit(ctx, key, "someLimit	")
+		assert.False(t, allowed)
+		assert.ErrorContains(t, err, "unknown limit type: someLimit")
 	})
 
 	t.Run("exceed limit", func(t *testing.T) {
@@ -107,4 +127,37 @@ func TestLimiter_CheckLimit(t *testing.T) {
 		assert.NoError(t, err)
 		assert.True(t, allowed)
 	})
+
+	t.Run("within invalid limit", func(t *testing.T) {
+		ctx := context.Background()
+		key := "test_key_within_limit"
+		allowed, err := limiter.CheckLimit(ctx, key, "someLimit	")
+		assert.False(t, allowed)
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "unknown limit type: someLimit")
+	})
+
+	t.Run("Error on Increasing limit", func(t *testing.T) {
+		ctx := context.Background()
+		key := "test_key_within_limit_error"
+
+		mock.ExpectIncr(key).SetErr(errors.New("error increasing limit"))
+		allowed, err := limiter.CheckLimit(ctx, key, IPLimit)
+		assert.False(t, allowed)
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "error increasing limit")
+	})
+
+	t.Run("Error on adding token expiration", func(t *testing.T) {
+		ctx := context.Background()
+		key := "test_key_within_expiration_error"
+
+		mock.ExpectIncr(key).SetVal(int64(1))
+		mock.ExpectExpire(key, duration).SetErr(errors.New("error setting expiration"))
+		allowed, err := limiter.CheckLimit(ctx, key, IPLimit)
+		assert.False(t, allowed)
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "error setting expiration")
+	})
+
 }
