@@ -12,5 +12,8 @@ func main() {
 
 	// Initialize Redis client
 	redisClient := limiter.NewRedisClient(cfg.RedisAddress)
-	log.Default().Printf("Config: %+v", redisClient.Options().Addr)
+
+	// Create a new limiter
+	rateLimiter := limiter.NewLimiter(redisClient, cfg)
+	log.Default().Println("Rate limiter initialized %d", rateLimiter)
 }

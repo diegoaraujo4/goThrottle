@@ -1,7 +1,7 @@
 package limiter
 
 import (
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 )
 
 func NewRedisClient(address string) *redis.Client {
