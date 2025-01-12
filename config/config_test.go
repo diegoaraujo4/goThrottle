@@ -10,7 +10,7 @@ import (
 func TestLoadConfig(t *testing.T) {
 	os.Setenv("IP_LIMIT", "10")
 	os.Setenv("TOKEN_LIMIT", "20")
-	os.Setenv("BLOCK_IN_SECONDS", "600")
+	os.Setenv("BLOCK_DURATION", "600")
 	os.Setenv("REDIS_ADDRESS", "127.0.0.1:6379")
 
 	config := LoadConfig()
